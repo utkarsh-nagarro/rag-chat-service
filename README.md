@@ -54,9 +54,9 @@ Java 17 Spring Boot microservice for storing chat sessions and messages from a R
 
 ### Rate Limiting
 
-- Simple in-memory rate limiting per remote IP.
-- Configured by `RATE_LIMIT_RPM` (requests per minute).
-- When exceeded, responses return **HTTP 429** with message `"Rate limit exceeded"`.
+-   Implemented using Bucket4j
+-   Configurable per API key
+-   Returns 429 if exceeded
 
 ### CORS
 
@@ -133,16 +133,71 @@ All examples assume header: `X-API-KEY: <your-api-key>`.
   - Response `204 No Content`; deletes session and all associated messages.
 
 - **Add message**
+
+  Supports two modes:
+
+  1) Add message to an existing session  
+  2) Auto-create a session if sessionId is not provided  
+
+  ---
+  
   - **POST** `/api/v1/sessions/{sessionId}/messages`
-  - Body:
-    ```json
-    {
-      "sender": "USER",
-      "content": "What is RAG?",
-      "context": "{\"retrievedDocs\": [...]}"`
-    }
-    ```
-  - Response `201 Created`: `ChatMessageResponse`.
+  
+    - Path Parameter:
+      - `sessionId` (UUID) – Required
+  
+    - Body:
+      ```json
+      {
+        "userId": "user-123",
+        "sender": "USER",
+        "content": "What is RAG?",
+        "context": "Initial user query"
+      }
+      ```
+  
+    - Behavior:
+      - Validates that session exists
+      - Stores message under the given session
+      - Updates session `updatedAt`
+  
+    - Response `201 Created`: `ChatMessageResponse`
+
+  ---
+  
+  - **POST** `/api/v1/sessions/messages`
+  
+    - Path Parameter:
+      - None
+  
+    - Body:
+      ```json
+      {
+        "userId": "user-123",
+        "sender": "USER",
+        "content": "Explain Java 17 features",
+        "context": "initial question"
+      }
+      ```
+  
+    - Behavior:
+      - Automatically creates a new session
+      - Uses first 30 characters of `content` as session title
+      - Stores message in newly created session
+      - Ensures no message loss
+  
+    - Response `201 Created`: `ChatMessageResponse`
+
+  ---
+  
+  - Notes:
+    - `userId` is mandatory in both cases
+    - If `sessionId` is invalid → `404 Not Found`
+    - If request validation fails → `400 Bad Request`
+    - Requires header:
+      ```
+      X-API-KEY: <your-api-key>
+      ```
 
 - **Get messages (paginated)**
   - **GET** `/api/v1/sessions/{sessionId}/messages?page=0&size=20`
