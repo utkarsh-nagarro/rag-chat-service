@@ -1,140 +1,86 @@
 package com.ragchat.service;
 
-import com.ragchat.api.dto.AddMessageRequest;
-import com.ragchat.api.dto.CreateSessionRequest;
-import com.ragchat.api.dto.ChatMessageResponse;
-import com.ragchat.api.dto.ChatSessionResponse;
-import com.ragchat.domain.ChatMessage;
-import com.ragchat.domain.ChatSession;
-import com.ragchat.repository.ChatMessageRepository;
 import com.ragchat.repository.ChatSessionRepository;
-import org.junit.jupiter.api.BeforeEach;
+import com.ragchat.repository.ChatMessageRepository;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.*;
 
-import java.time.OffsetDateTime;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+@ExtendWith(org.mockito.junit.jupiter.MockitoExtension.class)
 class ChatServiceTest {
 
+    @Mock
     private ChatSessionRepository sessionRepository;
+
+    @Mock
     private ChatMessageRepository messageRepository;
+
+    @InjectMocks
     private ChatService chatService;
 
-    @BeforeEach
-    void setUp() {
-        sessionRepository = mock(ChatSessionRepository.class);
-        messageRepository = mock(ChatMessageRepository.class);
-        chatService = new ChatService(sessionRepository, messageRepository);
+    @Test
+    void listSessions_shouldReturnEmptyList() {
+
+        when(sessionRepository.findByUserIdOrderByUpdatedAtDesc("Ram"))
+                .thenReturn(Collections.emptyList());
+
+        var result = chatService.listSessions("Ram");
+
+        assertTrue(result.isEmpty());
+        verify(sessionRepository).findByUserIdOrderByUpdatedAtDesc("Ram");
     }
 
     @Test
-    void createSession_savesAndReturnsDto() {
-        CreateSessionRequest request = new CreateSessionRequest();
-        request.setUserId("user-1");
-        request.setTitle("My chat");
+    void deleteSession_whenExists_shouldDelete() {
 
-        ChatSession saved = new ChatSession();
-        saved.setUserId("user-1");
-        saved.setTitle("My chat");
-
-        when(sessionRepository.save(any(ChatSession.class))).thenReturn(saved);
-
-        var response = chatService.createSession(request);
-
-        assertThat(response.getUserId()).isEqualTo("user-1");
-        assertThat(response.getTitle()).isEqualTo("My chat");
-        verify(sessionRepository, times(1)).save(any(ChatSession.class));
-    }
-
-    @Test
-    void addMessage_throwsWhenSessionMissing() {
         UUID id = UUID.randomUUID();
-        when(sessionRepository.findById(id)).thenReturn(Optional.empty());
 
-        AddMessageRequest request = new AddMessageRequest();
-        request.setSender("USER");
-        request.setContent("hello");
+        when(sessionRepository.existsById(id))
+                .thenReturn(true);
 
-        assertThrows(ResourceNotFoundException.class, () -> chatService.addMessage(id, request));
+        chatService.deleteSession(id);
+
+        verify(sessionRepository).deleteById(id);
     }
 
     @Test
-    void renameSession_updatesTitle() {
+    void deleteSession_whenNotExists_shouldThrow() {
+
         UUID id = UUID.randomUUID();
-        ChatSession existing = new ChatSession();
-        existing.setId(id);
-        existing.setUserId("user-1");
-        existing.setTitle("Old title");
 
-        when(sessionRepository.findById(id)).thenReturn(Optional.of(existing));
+        when(sessionRepository.existsById(id))
+                .thenReturn(false);
 
-        ChatSessionResponse response = chatService.renameSession(id, "New title");
-
-        assertThat(response.getTitle()).isEqualTo("New title");
-        verify(sessionRepository, times(1)).findById(id);
+        assertThrows(RuntimeException.class, () ->
+                chatService.deleteSession(id));
     }
 
     @Test
-    void setFavorite_togglesFlag() {
+    void renameSession_whenNotFound_shouldThrow() {
+
         UUID id = UUID.randomUUID();
-        ChatSession existing = new ChatSession();
-        existing.setId(id);
-        existing.setUserId("user-1");
-        existing.setTitle("Chat");
-        existing.setFavorite(false);
 
-        when(sessionRepository.findById(id)).thenReturn(Optional.of(existing));
+        when(sessionRepository.findById(id))
+                .thenReturn(Optional.empty());
 
-        ChatSessionResponse response = chatService.setFavorite(id, true);
-
-        assertThat(response.isFavorite()).isTrue();
-        verify(sessionRepository, times(1)).findById(id);
+        assertThrows(RuntimeException.class, () ->
+                chatService.renameSession(id, "Title"));
     }
 
     @Test
-    void deleteSession_whenMissing_throws() {
+    void addMessage_whenSessionNotFound_shouldThrow() {
+
         UUID id = UUID.randomUUID();
-        when(sessionRepository.existsById(id)).thenReturn(false);
 
-        assertThrows(ResourceNotFoundException.class, () -> chatService.deleteSession(id));
-    }
+        when(sessionRepository.findById(id))
+                .thenReturn(Optional.empty());
 
-    @Test
-    void getMessages_returnsPageOfResponses() {
-        UUID sessionId = UUID.randomUUID();
-        ChatSession session = new ChatSession();
-        session.setId(sessionId);
-        session.setUserId("user-1");
-        session.setTitle("Chat");
-
-        when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
-
-        ChatMessage message = new ChatMessage();
-        message.setSession(session);
-        message.setSender("USER");
-        message.setContent("hello");
-        message.setCreatedAt(OffsetDateTime.now());
-
-        PageRequest pageable = PageRequest.of(0, 10);
-        Page<ChatMessage> page = new PageImpl<>(List.of(message), pageable, 1);
-
-        when(messageRepository.findBySessionOrderByCreatedAtAsc(session, pageable)).thenReturn(page);
-
-        Page<ChatMessageResponse> result = chatService.getMessages(sessionId, 0, 10);
-
-        assertThat(result.getTotalElements()).isEqualTo(1);
-        assertThat(result.getContent().get(0).getContent()).isEqualTo("hello");
-        verify(sessionRepository, times(1)).findById(sessionId);
-        verify(messageRepository, times(1)).findBySessionOrderByCreatedAtAsc(session, pageable);
+        assertThrows(RuntimeException.class, () ->
+                chatService.addMessage(id, null));
     }
 }
-

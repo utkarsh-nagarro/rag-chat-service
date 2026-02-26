@@ -5,11 +5,11 @@ Java 17 Spring Boot microservice for storing chat sessions and messages from a R
 ### Tech Stack
 
 - **Language**: Java 17
-- **Framework**: Spring Boot 3 (Web, Data JPA, Validation, Actuator)
+- **Framework**: Spring Boot 3 (Web, Data JPA, Validation, Actuator, Security)
 - **Database**: PostgreSQL
 - **Build**: Maven
 - **Docs**: springdoc-openapi (Swagger UI)
-- **Other**: API key auth, in-memory rate limiting, CORS, Docker, docker-compose, Adminer
+- **Other**: API key auth, in-memory rate limiting (Bucket4j), CORS, Docker, docker-compose, Adminer
 
 ### Setup
 
@@ -45,23 +45,122 @@ Java 17 Spring Boot microservice for storing chat sessions and messages from a R
    mvn test
    ```
 
-### API Authentication
+---
 
-- All `/api/**` endpoints are protected by an **API key**.
-- Header name: **`X-API-KEY`** (configurable via `security.api-key-header`).
-- Value: must match **`API_KEY`** environment property.
-- Health and Swagger endpoints are publicly accessible.
+# 🔐 Security Design
 
-### Rate Limiting
+## API Key Authentication
 
--   Implemented using Bucket4j
--   Configurable per API key
--   Returns 429 if exceeded
+All APIs are secured using API key authentication as required by the case study specification.
+
+### How It Works
+
+- Each request must include:
+  X-API-KEY: <your-api-key>
+- API key is read from environment variables
+- Stateless authentication (no HTTP sessions)
+- Invalid/missing keys return 401 Unauthorized
+
+---
+
+## 🔒 Environment-Based Secret Management
+
+The API key is configured via environment variable:
+
+API_KEY=your-secret-key
+
+Benefits:
+
+- No hardcoded secrets
+- Supports Dockerized deployments
+
+---
+
+# 🚦 Rate Limiting
+
+To prevent API abuse, rate limiting is implemented using Bucket4j.
+
+### Current Implementation
+
+- Algorithm: Token Bucket
+- Scope: Per API Key
+- Storage: In-memory (ConcurrentHashMap)
+- Configurable via:
+  rate-limiting.requests-per-minute
+
+If the rate limit is exceeded:
+429 Too Many Requests
+
+------------------------------------------------------------------------
+
+## ⚠ Scalability Consideration
+
+Current rate limiting is in-memory and instance-specific.
+
+In horizontally scaled deployments: - Each instance maintains its own
+bucket - Effective rate limit increases with instance count
+
+------------------------------------------------------------------------
+
+## 🚀 Production Upgrade Path
+
+For distributed systems, rate limiting can be upgraded to:
+
+-   Redis-backed Bucket4j
+-   API Gateway-based throttling
+-   Spring Cloud Gateway rate limiter
+
+This enables:
+
+-   Centralized rate control
+-   Horizontal scalability
+-   Consistent global limits
+
+------------------------------------------------------------------------
 
 ### CORS
 
 - Configured via `CORS_ALLOWED_ORIGINS` env var.
 - Set to `*` for development, or a list like `http://localhost:3000,http://localhost:5173`.
+
+---
+
+# 🗄 Database Choice
+
+## Current Implementation
+
+This service currently uses **PostgreSQL (Relational Database)** for persistent storage.
+
+The domain model consists of:
+
+- Chat Sessions
+- Chat Messages
+- One-to-many relationship between sessions and messages
+- Structured schema with pagination and filtering support
+
+A relational database fits naturally for the current structured data model and transactional consistency requirements.
+
+---
+
+## Future Extensibility
+
+The architecture is designed in a layered manner (Controller → Service → Repository), which allows flexibility in the persistence layer.
+
+If future requirements evolve, the system can be adapted to use:
+
+- A NoSQL document database (e.g., MongoDB)
+- A distributed data store
+- A hybrid SQL + NoSQL approach
+
+NoSQL could be considered if:
+
+- Message schema becomes highly flexible or dynamic
+- Horizontal scalability requirements increase significantly
+- Large volumes of unstructured or semi-structured data are introduced
+
+The current design does not prevent migration or integration with NoSQL-based storage in the future.
+
+---
 
 ### Domain Model
 

@@ -7,10 +7,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -20,10 +17,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
-@Order(2)
 public class RateLimitingFilter extends OncePerRequestFilter {
-
-    private static final Logger log = LoggerFactory.getLogger(RateLimitingFilter.class);
 
     private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
 
@@ -50,18 +44,20 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 
         String apiKey = request.getHeader(apiKeyHeader);
 
-        if (apiKey == null || apiKey.isBlank()) {
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Missing API key");
-            return;
-        }
-
         Bucket bucket = buckets.computeIfAbsent(apiKey, this::createBucket);
 
         if (bucket.tryConsume(1)) {
             filterChain.doFilter(request, response);
         } else {
-            log.warn("Rate limit exceeded for API key: {}", apiKey);
-            response.sendError(429, "Rate limit exceeded");
+            response.setStatus(429);
+            response.setContentType("application/json");
+            response.getWriter().write("""
+                {
+                  "status": 429,
+                  "error": "Too Many Requests",
+                  "message": "Rate limit exceeded"
+                }
+            """);
         }
     }
 
